@@ -1,0 +1,27 @@
+{
+  "name": "bulk-email-pro",
+  "version": "1.0.0",
+  "description": "Cross-platform bulk email desktop application",
+  "scripts": {
+    "start:backend": "cd backend && mvn spring-boot:run",
+    "start:frontend": "cd frontend && npm run start",
+    "start:electron": "cd electron && npm start",
+    "start:dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\" \"wait-on http://localhost:8080/api/settings && npm run start:electron\"",
+
+    "build:backend": "cd backend && mvn clean package -DskipTests",
+    "build:frontend": "cd frontend && npm run build",
+    "build:electron:win": "cd electron && npm run build:win",
+    "build:electron:mac": "cd electron && npm run build:mac",
+    "build:electron:linux": "cd electron && npm run build:linux",
+
+    "build:win": "npm run build:backend && npm run build:frontend && npm run build:electron:win",
+    "build:mac": "npm run build:backend && npm run build:frontend && npm run build:electron:mac",
+    "build:linux": "npm run build:backend && npm run build:frontend && npm run build:electron:linux",
+
+    "install:all": "npm install && cd frontend && npm install && cd ../electron && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0"
+  }
+}

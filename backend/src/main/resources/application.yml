@@ -1,0 +1,76 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: bulk-email-pro
+
+  datasource:
+    url: jdbc:h2:file:${user.home}/BulkEmailPro/data/emaildb;AUTO_SERVER=TRUE;AUTO_RECONNECT=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ''
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: false
+
+  mail:
+    default-encoding: UTF-8
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  security:
+    user:
+      name: admin
+      password: admin
+
+  quartz:
+    job-store-type: memory
+    properties:
+      org:
+        quartz:
+          threadPool:
+            threadCount: 5
+
+# Application specific settings
+app:
+  encryption:
+    secret-key: BulkEmailPro2024SecretKey!@#$
+  jwt:
+    secret: BulkEmailProJWT2024SecretKeyAtLeast32Chars!@#$
+    expiration-ms: 86400000
+  cors:
+    allowed-origins: http://localhost:4200,http://localhost:3000,file://
+  tracking:
+    base-url: http://localhost:8080
+  unsubscribe:
+    base-url: http://localhost:8080
+  batch:
+    default-size: 100
+    default-delay-seconds: 60
+    inter-email-delay-ms: 200
+  warmup:
+    enabled: true
+
+logging:
+  level:
+    com.bulkemail: DEBUG
+    org.springframework.mail: DEBUG
+  file:
+    name: ${user.home}/BulkEmailPro/logs/app.log

@@ -1,0 +1,51 @@
+# ===== Backend (Java / Maven) =====
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/mvnw
+backend/mvnw.cmd
+*.class
+*.jar
+*.war
+*.ear
+!backend/target/bulk-email-pro-1.0.0.jar
+
+# ===== Frontend (Angular / Node) =====
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# ===== Electron =====
+electron/node_modules/
+electron/dist/
+
+# ===== Root node_modules =====
+node_modules/
+
+# ===== Build output =====
+dist/
+
+# ===== H2 Database & App Data =====
+*.mv.db
+*.trace.db
+BulkEmailPro/
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== IDE / OS =====
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Environment & Secrets =====
+.env
+.env.*
+application-prod.yml
+application-secret.yml
+
+# ===== Claude Code =====
+.claude/

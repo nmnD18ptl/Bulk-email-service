@@ -1,0 +1,169 @@
+package com.bulkemail.pro.service;
+
+import com.bulkemail.pro.model.entity.SmtpConfig;
+import com.bulkemail.pro.repository.SmtpConfigRepository;
+import com.bulkemail.pro.security.TenantContext;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.Properties;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+@Transactional
+public class SmtpConfigService {
+
+    private final SmtpConfigRepository smtpConfigRepository;
+    private final EncryptionService encryptionService;
+
+    public List<SmtpConfig> findAll() {
+        Long orgId = TenantContext.getOrganizationId();
+        return orgId != null
+            ? smtpConfigRepository.findByOrganizationId(orgId)
+            : smtpConfigRepository.findAll();
+    }
+
+    public Optional<SmtpConfig> findById(Long id) {
+        Long orgId = TenantContext.getOrganizationId();
+        return smtpConfigRepository.findById(id)
+            .filter(c -> orgId == null || orgId.equals(c.getOrganizationId()));
+    }
+
+    public SmtpConfig save(SmtpConfig config, String rawPassword) {
+        Long orgId = TenantContext.getOrganizationId();
+        if (orgId != null) {
+            config.setOrganizationId(orgId);
+        }
+        if (rawPassword != null && !rawPassword.isEmpty()) {
+            config.setEncryptedPassword(encryptionService.encrypt(rawPassword));
+        }
+
+        if (config.isDefault()) {
+            // Unset other defaults within this org
+            List<SmtpConfig> existing = orgId != null
+                ? smtpConfigRepository.findByOrganizationId(orgId)
+                : smtpConfigRepository.findAll();
+            existing.forEach(c -> {
+                if (c.isDefault() && !c.getId().equals(config.getId())) {
+                    c.setDefault(false);
+                    smtpConfigRepository.save(c);
+                }
+            });
+        }
+
+        return smtpConfigRepository.save(config);
+    }
+
+    public void delete(Long id) {
+        findById(id).ifPresent(c -> smtpConfigRepository.deleteById(id));
+    }
+
+    public boolean testConnection(Long id) {
+        return smtpConfigRepository.findById(id).map(config -> {
+            try {
+                JavaMailSenderImpl sender = buildMailSender(config);
+                sender.testConnection();
+                config.setConnectionTested(true);
+                smtpConfigRepository.save(config);
+                return true;
+            } catch (Exception e) {
+                log.error("SMTP connection test failed for {}: {}", config.getName(), e.getMessage());
+                return false;
+            }
+        }).orElse(false);
+    }
+
+    public boolean testConnectionWithParams(String host, int port, String username, String password,
+                                             SmtpConfig.SecurityType securityType) {
+        try {
+            JavaMailSenderImpl sender = new JavaMailSenderImpl();
+            sender.setHost(host);
+            sender.setPort(port);
+            sender.setUsername(username);
+            sender.setPassword(password);
+            configureProperties(sender, securityType);
+            sender.testConnection();
+            return true;
+        } catch (Exception e) {
+            log.error("SMTP connection test failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    public JavaMailSenderImpl buildMailSender(SmtpConfig config) {
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost(config.getHost());
+        sender.setPort(config.getPort());
+        sender.setUsername(config.getUsername());
+        sender.setPassword(encryptionService.decrypt(config.getEncryptedPassword()));
+        sender.setDefaultEncoding("UTF-8");
+        configureProperties(sender, config.getSecurityType());
+        return sender;
+    }
+
+    private void configureProperties(JavaMailSenderImpl sender, SmtpConfig.SecurityType securityType) {
+        Properties props = sender.getJavaMailProperties();
+        props.put("mail.transport.protocol", "smtp");
+        props.put("mail.smtp.connectiontimeout", "10000");
+        props.put("mail.smtp.timeout", "10000");
+        props.put("mail.smtp.writetimeout", "10000");
+
+        switch (securityType) {
+            case TLS -> {
+                props.put("mail.smtp.auth", "true");
+                props.put("mail.smtp.starttls.enable", "true");
+                props.put("mail.smtp.starttls.required", "true");
+            }
+            case SSL -> {
+                props.put("mail.smtp.auth", "true");
+                props.put("mail.smtp.ssl.enable", "true");
+                props.put("mail.smtp.ssl.checkserveridentity", "true");
+            }
+            default -> {
+                props.put("mail.smtp.auth", "true");
+            }
+        }
+    }
+
+    public Optional<SmtpConfig> getDefault() {
+        Long orgId = TenantContext.getOrganizationId();
+        return orgId != null
+            ? smtpConfigRepository.findActiveDefaultByOrganizationId(orgId)
+            : smtpConfigRepository.findActiveDefault();
+    }
+
+    public boolean canSendMore(SmtpConfig config) {
+        resetCountersIfNeeded(config);
+        return config.getSentToday() < config.getDailyLimit() &&
+               config.getSentThisHour() < config.getHourlyLimit();
+    }
+
+    private void resetCountersIfNeeded(SmtpConfig config) {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+
+        if (config.getLastResetDate() == null || !config.getLastResetDate().equals(today)) {
+            config.setSentToday(0);
+            config.setLastResetDate(today);
+        }
+
+        if (config.getLastResetHour() == null ||
+            config.getLastResetHour().getHour() != now.getHour()) {
+            config.setSentThisHour(0);
+            config.setLastResetHour(now);
+        }
+    }
+
+    public void incrementSentCount(SmtpConfig config) {
+        resetCountersIfNeeded(config);
+        config.setSentToday(config.getSentToday() + 1);
+        config.setSentThisHour(config.getSentThisHour() + 1);
+        smtpConfigRepository.save(config);
+    }
+}

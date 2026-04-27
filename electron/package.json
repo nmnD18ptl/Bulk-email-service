@@ -1,0 +1,65 @@
+{
+  "name": "bulk-email-pro",
+  "version": "1.0.0",
+  "description": "Professional Bulk Email Desktop Application",
+  "main": "main.js",
+  "author": "Bulk Email Pro",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --mac --linux"
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.7",
+    "electron-log": "^5.1.2"
+  },
+  "devDependencies": {
+    "electron": "^28.2.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.bulkemailpro.app",
+    "productName": "Bulk Email Pro",
+    "directories": {
+      "output": "../dist/installers"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "../frontend/dist/bulk-email-pro/**/*",
+      "../backend/target/bulk-email-pro-1.0.0.jar"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/target/bulk-email-pro-1.0.0.jar",
+        "to": "backend/bulk-email-pro.jar"
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "category": "Office"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

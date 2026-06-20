@@ -1,0 +1,56 @@
+# ── Test profile — loaded by @SpringBootTest in integration tests ──
+# Testcontainers overrides the datasource URL at runtime via
+# @DynamicPropertySource, so the values below are placeholders only.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bulkemail_test
+    username: test
+    password: test
+
+  flyway:
+    enabled: true                    # run migrations against Testcontainers DB
+    validate-on-migrate: true
+    clean-disabled: false            # allow clean between test runs
+
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        generate_statistics: false
+
+  data:
+    redis:
+      host: localhost                # overridden at runtime by TestContainersConfig @DynamicPropertySource
+      port: 6379
+
+  cache:
+    type: redis
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        auto-startup: false          # no consumers during unit/integration tests
+
+  quartz:
+    auto-startup: false              # don't fire scheduled jobs in tests
+
+app:
+  encryption:
+    secret-key: TestSecretKey12345678901234
+  jwt:
+    secret: TestJWTSecretKeyAtLeast32CharsLongForTests!
+    expiration-ms: 3600000
+  tracking:
+    base-url: http://localhost:8080
+  unsubscribe:
+    base-url: http://localhost:8080
+
+logging:
+  level:
+    com.bulkemail: DEBUG
+    org.flywaydb: INFO
+    org.testcontainers: INFO

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <!--
+    Console appender shared by all profiles.
+    ISO-8601 timestamps with UTC offset make log lines parseable by Railway,
+    Datadog, Grafana Loki, and other cloud log aggregators.
+  -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSS'+00:00'} %-5level [%thread] %logger{40} — %msg%n</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <!--
+    Rolling file appender — only active outside production.
+    On Railway there is no durable filesystem; prod logs go to stdout only.
+  -->
+  <springProfile name="!prod">
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+      <file>${LOG_PATH:-${user.home}/BulkEmailPro/logs}/app.log</file>
+      <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+        <fileNamePattern>${LOG_PATH:-${user.home}/BulkEmailPro/logs}/app.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+        <maxFileSize>50MB</maxFileSize>
+        <maxHistory>30</maxHistory>
+        <totalSizeCap>1GB</totalSizeCap>
+      </rollingPolicy>
+      <encoder>
+        <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] %logger{40} — %msg%n</pattern>
+      </encoder>
+    </appender>
+  </springProfile>
+
+  <!-- ── Production: stdout only ──────────────────────────────────────────── -->
+  <springProfile name="prod">
+    <root level="WARN">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Application logs at INFO so deployments, campaigns, and errors are visible. -->
+    <logger name="com.bulkemail.pro"        level="INFO"  additivity="false"><appender-ref ref="CONSOLE"/></logger>
+
+    <!-- Flyway at INFO so migration results appear in Railway deploy logs. -->
+    <logger name="org.flywaydb"             level="INFO"  additivity="false"><appender-ref ref="CONSOLE"/></logger>
+
+    <!-- Reduce noise from infrastructure libraries. -->
+    <logger name="org.springframework.amqp" level="WARN"  additivity="false"><appender-ref ref="CONSOLE"/></logger>
+    <logger name="org.springframework.mail" level="WARN"  additivity="false"><appender-ref ref="CONSOLE"/></logger>
+    <logger name="com.zaxxer.hikari"        level="WARN"  additivity="false"><appender-ref ref="CONSOLE"/></logger>
+    <logger name="io.lettuce"               level="WARN"  additivity="false"><appender-ref ref="CONSOLE"/></logger>
+  </springProfile>
+
+  <!-- ── All other profiles (dev, test, mailpit) ──────────────────────────── -->
+  <springProfile name="!prod">
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+      <appender-ref ref="FILE"/>
+    </root>
+
+    <logger name="com.bulkemail.pro"        level="DEBUG" additivity="false">
+      <appender-ref ref="CONSOLE"/><appender-ref ref="FILE"/>
+    </logger>
+    <logger name="org.flywaydb"             level="INFO"  additivity="false">
+      <appender-ref ref="CONSOLE"/><appender-ref ref="FILE"/>
+    </logger>
+    <logger name="org.springframework.amqp" level="WARN"  additivity="false">
+      <appender-ref ref="CONSOLE"/><appender-ref ref="FILE"/>
+    </logger>
+    <logger name="org.testcontainers"       level="INFO"  additivity="false">
+      <appender-ref ref="CONSOLE"/>
+    </logger>
+  </springProfile>
+
+</configuration>

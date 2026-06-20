@@ -1,0 +1,113 @@
+# ── Production profile ────────────────────────────────────────────────────────
+# All secrets come exclusively from environment variables — nothing is hardcoded.
+# Cloud-service providers:
+#   PostgreSQL → Neon      (JDBC URL includes ?sslmode=require)
+#   Redis      → Upstash   (rediss:// URL with TLS)
+#   RabbitMQ   → CloudAMQP (amqps:// URL with TLS)
+
+spring:
+
+  # ── Neon PostgreSQL ──────────────────────────────────────────────────────────
+  # DB_URL format:  jdbc:postgresql://<host>/neondb?sslmode=require
+  datasource:
+    url:      ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:10}   # Neon free tier: 10 connections max
+      minimum-idle:      ${DB_POOL_MIN:2}
+      connection-timeout: 30000
+      idle-timeout: 300000
+      max-lifetime: 600000
+      leak-detection-threshold: 30000
+      # Neon serverless databases may suspend — validate before use.
+      connection-test-query: SELECT 1
+      keepalive-time: 30000
+
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        generate_statistics: false
+
+  flyway:
+    out-of-order: false
+    validate-on-migrate: true
+
+  # ── Upstash Redis ─────────────────────────────────────────────────────────────
+  # REDIS_URL format:  rediss://default:<token>@<host>:<port>
+  # Lettuce resolves TLS automatically from the rediss:// scheme.
+  data:
+    redis:
+      url: ${REDIS_URL}
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX:10}
+          min-idle:   ${REDIS_POOL_MIN:1}
+
+  cache:
+    type: redis
+
+  # ── CloudAMQP RabbitMQ ────────────────────────────────────────────────────────
+  # RABBITMQ_URL format:  amqps://<user>:<pass>@<host>/<vhost>
+  # Spring AMQP enables TLS automatically for the amqps:// scheme.
+  rabbitmq:
+    addresses: ${RABBITMQ_URL}
+    connection-timeout: 15000
+    listener:
+      simple:
+        prefetch: ${RABBITMQ_PREFETCH:5}
+
+  # ── Graceful shutdown ─────────────────────────────────────────────────────────
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+
+# ── Actuator ──────────────────────────────────────────────────────────────────
+# /actuator/health is explicitly permitted without auth in SecurityConfig.
+# /actuator/prometheus is scraped by Grafana (P3.5 Phase 6).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always         # Railway health check reads the full payload
+      probes:
+        enabled: true              # exposes /actuator/health/liveness + /readiness
+  info:
+    env:
+      enabled: true
+  observations:
+    key-values:
+      application: bulk-email-pro
+      environment: prod
+
+# ── Application ───────────────────────────────────────────────────────────────
+app:
+  encryption:
+    secret-key: ${ENCRYPTION_KEY}
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRY_MS:3600000}   # 1 h in prod
+  cors:
+    # Vercel main domain + wildcard for preview deployments.
+    # Example: https://bulk-email-pro.vercel.app,https://*.vercel.app
+    allowed-origins: ${CORS_ORIGINS}
+  tracking:
+    base-url: ${TRACKING_BASE_URL}
+  unsubscribe:
+    base-url: ${UNSUBSCRIBE_BASE_URL}
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Railway captures stdout — logback-spring.xml configures console-only output.
+# No logging.file.name here; there is no persistent filesystem on Railway.
+logging:
+  level:
+    "[com.bulkemail]": INFO
+    root: WARN
+    "[org.springframework.amqp]": WARN
+    "[org.flywaydb]": INFO
+    "[com.zaxxer.hikari]": WARN
+    "[org.springframework.mail]": WARN

@@ -1,0 +1,54 @@
+# ── Local production simulation ───────────────────────────────────────────────
+# Runs the Spring Boot application in a Docker container connected to the same
+# cloud services used in production: Neon (PostgreSQL), Upstash (Redis),
+# CloudAMQP (RabbitMQ).
+#
+# Usage:
+#   1. cp .env.example .env  — fill in all cloud-service credentials
+#   2. docker compose -f docker-compose.prod.yml build
+#   3. docker compose -f docker-compose.prod.yml up
+#   4. Open http://localhost:8080/actuator/health to verify
+#
+# No local database / Redis / RabbitMQ containers are started here.
+# The application connects directly to the cloud services in your .env.
+
+version: "3.9"
+
+services:
+
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: bulkemail-pro:local
+    container_name: bulkemail_app_prod
+    restart: unless-stopped
+
+    # All secrets come from .env — never commit that file to git.
+    env_file: .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-8080}/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s   # allow time for Flyway migrations on first boot
+
+    # Mirror Railway's free-tier container limits.
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
+
+    volumes:
+      - app_logs:/app/logs
+
+volumes:
+  app_logs:

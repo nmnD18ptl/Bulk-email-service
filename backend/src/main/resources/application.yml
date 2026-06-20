@@ -1,0 +1,170 @@
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain
+  error:
+    include-message: never      # never leak stack traces to clients
+    include-binding-errors: never
+  shutdown: graceful            # drain in-flight requests before JVM exits
+
+spring:
+  application:
+    name: bulk-email-pro
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  lifecycle:
+    timeout-per-shutdown-phase: 60s   # max wait for in-flight messages / requests
+
+  # ── PostgreSQL / HikariCP ──────────────────────────────────
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/bulkemail_dev}
+    username: ${DB_USERNAME:bulkemail}
+    password: ${DB_PASSWORD:bulkemail}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: BulkEmailHikariPool
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: ${DB_POOL_MIN:5}
+      connection-timeout: 30000        # 30 s — fail fast if pool exhausted
+      idle-timeout: 300000             # 5 min
+      max-lifetime: 1200000            # 20 min — recycle before server kills
+      leak-detection-threshold: 60000  # 60 s — logs suspicious long-held connections
+      connection-test-query: SELECT 1
+      data-source-properties:
+        reWriteBatchedInserts: true    # batches PostgreSQL INSERT statements
+        ApplicationName: bulk-email-pro
+
+  # ── JPA / Hibernate ───────────────────────────────────────
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate              # Flyway owns DDL; Hibernate only validates
+    open-in-view: false               # prevents lazy-load footguns in web layer
+    show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100
+          fetch_size: 100
+        order_inserts: true           # groups batched INSERTs by table
+        order_updates: true
+        generate_statistics: false
+        format_sql: false
+
+  # ── Flyway ────────────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    validate-on-migrate: true
+    out-of-order: false               # fail if migrations are applied out-of-order
+
+  # ── Mail ──────────────────────────────────────────────────
+  mail:
+    default-encoding: UTF-8
+
+  # ── File Upload ───────────────────────────────────────────
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  # ── Redis ─────────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: 1000ms
+
+  cache:
+    type: redis
+    redis:
+      key-prefix: "bep:"          # namespace all keys under bulk-email-pro
+      use-key-prefix: true
+      cache-null-values: false
+
+  # ── RabbitMQ ──────────────────────────────────────────────
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    connection-timeout: 10000
+    listener:
+      simple:
+        acknowledge-mode: manual          # manual ack — message re-queued on failure
+        prefetch: 5                       # backpressure: at most 5 unacked per consumer
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000          # 2 s → 4 s → 8 s exponential
+          multiplier: 2.0
+          max-interval: 30000             # cap at 30 s
+        default-requeue-rejected: false   # rejected after max-retries → DLQ
+
+  # ── Quartz (in-memory; migrated to JDBC store in P3) ─────
+  quartz:
+    job-store-type: memory
+    properties:
+      org.quartz.threadPool.threadCount: 5
+
+  # ── Actuator ──────────────────────────────────────────────
+  # Prometheus endpoint exposed for Grafana (P7 wires up dashboards)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+# ── Application settings ──────────────────────────────────
+app:
+  encryption:
+    secret-key: ${ENCRYPTION_KEY:BulkEmailPro2024SecretKey!@#$}
+  jwt:
+    secret: ${JWT_SECRET:BulkEmailProJWT2024SecretKeyAtLeast32Chars!@#$}
+    expiration-ms: ${JWT_EXPIRY_MS:86400000}   # 24 h
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:4200,http://localhost:3000,file://}
+  tracking:
+    base-url: ${TRACKING_BASE_URL:http://localhost:8080}
+  unsubscribe:
+    base-url: ${UNSUBSCRIBE_BASE_URL:http://localhost:8080}
+  batch:
+    default-size: 100
+    default-delay-seconds: 60
+    inter-email-delay-ms: 200
+  warmup:
+    enabled: true
+
+# ── Logging ───────────────────────────────────────────────
+# logback-spring.xml owns appender and file-rotation config.
+# Only log levels are set here; they compose cleanly with the XML file.
+logging:
+  level:
+    "[com.bulkemail]": INFO
+    "[org.springframework.mail]": WARN
+    "[org.flywaydb]": INFO
+    "[com.zaxxer.hikari]": WARN

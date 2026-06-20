@@ -1,0 +1,117 @@
+# Local development stack — Priority 1 (PostgreSQL)
+# Future priorities add Redis and RabbitMQ services here.
+#
+# Usage:
+#   docker compose up -d          # start
+#   docker compose down -v        # stop + delete volumes
+
+version: "3.9"
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bulkemail_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bulkemail_dev
+      POSTGRES_USER: bulkemail
+      POSTGRES_PASSWORD: bulkemail
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bulkemail -d bulkemail_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: bulkemail_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --save ""
+        --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: bulkemail_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI — http://localhost:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Mailpit — local SMTP catch-all; captures all outbound email during development
+  # SMTP: localhost:1025  |  UI: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: bulkemail_mailpit
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_UI_AUTH_FILE: ""   # disable UI authentication for local dev
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI — http://localhost:8025
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8025/api/v1/messages > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # pgAdmin — optional browser-based DB UI
+  # Open http://localhost:5050  |  admin@bulkemail.local / admin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: bulkemail_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@bulkemail.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    profiles:
+      - tools   # only starts with: docker compose --profile tools up -d
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  rabbitmq_data:
+  mailpit_data:

@@ -33,6 +33,9 @@ public class CampaignService {
     private final PlanEnforcementService planEnforcementService;
     private final OutboxEventRepository  outboxEventRepository;
 
+    @org.springframework.beans.factory.annotation.Value("${app.tracking.base-url}")
+    private String trackingBaseUrl;
+
     public Page<Campaign> findAll(Pageable pageable) {
         Long orgId = TenantContext.getOrganizationId();
         if (orgId != null) {
@@ -225,7 +228,7 @@ public class CampaignService {
             .replace("{{FirstName}}", "Test")
             .replace("{{LastName}}", "User")
             .replace("{{Email}}", testEmail)
-            .replace("{{UnsubscribeLink}}", "#test-unsubscribe");
+            .replace("{{UnsubscribeLink}}", trackingBaseUrl + "/unsubscribe/test-mode");
 
         if (campaign.getTextContent() != null && !campaign.getTextContent().isBlank()) {
             helper.setText(campaign.getTextContent(), html);

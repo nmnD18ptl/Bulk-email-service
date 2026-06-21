@@ -95,7 +95,8 @@ public class EmailSenderService {
             }
 
             // RFC-compliant headers required by Gmail/Yahoo
-            String unsubscribeUrl = trackingBaseUrl + "/unsubscribe/" + contact.getUnsubscribeToken();
+            String unsubscribeUrl = trackingBaseUrl + "/unsubscribe/" + contact.getUnsubscribeToken()
+                    + "?c=" + campaign.getId();
             String replyToEmail = campaign.getReplyToEmail() != null ? campaign.getReplyToEmail() : fromEmail;
             message.setHeader("List-Unsubscribe",
                 "<mailto:" + replyToEmail + "?subject=unsubscribe>, <" + unsubscribeUrl + ">");
@@ -257,6 +258,37 @@ public class EmailSenderService {
             }
         });
         return url;
+    }
+
+    /**
+     * Records an UNSUBSCRIBED tracking event and increments the campaign's
+     * unsubscribe counter. Called by TrackingController after a successful
+     * link-click unsubscribe so that analytics reflect the real opt-out count.
+     *
+     * @param unsubscribeToken the contact's unique unsubscribe token (from the URL)
+     * @param campaignId       the campaign that sent the email (from the ?c= param)
+     * @param ipAddress        client IP for audit purposes
+     */
+    @Transactional
+    public void recordUnsubscribe(String unsubscribeToken, Long campaignId, String ipAddress) {
+        contactRepository.findByUnsubscribeToken(unsubscribeToken).ifPresent(contact ->
+            campaignRepository.findById(campaignId).ifPresent(campaign -> {
+                String trackingKey = "unsub_" + unsubscribeToken + "_" + campaignId;
+                boolean alreadyRecorded = emailTrackingRepository
+                        .existsByTrackingIdAndEventType(trackingKey, EmailTracking.TrackingEvent.UNSUBSCRIBED);
+                if (!alreadyRecorded) {
+                    EmailTracking t = new EmailTracking();
+                    t.setTrackingId(trackingKey);
+                    t.setCampaign(campaign);
+                    t.setContact(contact);
+                    t.setOrganizationId(contact.getOrganizationId());
+                    t.setEventType(EmailTracking.TrackingEvent.UNSUBSCRIBED);
+                    t.setIpAddress(ipAddress);
+                    emailTrackingRepository.save(t);
+                    updateCampaignStats(campaign, "unsubscribe");
+                }
+            })
+        );
     }
 
 }

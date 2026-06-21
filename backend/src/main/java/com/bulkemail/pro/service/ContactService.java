@@ -2,8 +2,10 @@ package com.bulkemail.pro.service;
 
 import com.bulkemail.pro.model.dto.ImportPreviewResponse;
 import com.bulkemail.pro.model.entity.Contact;
+import com.bulkemail.pro.model.entity.SuppressionList;
 import com.bulkemail.pro.model.entity.Tag;
 import com.bulkemail.pro.repository.ContactRepository;
+import com.bulkemail.pro.repository.SuppressionListRepository;
 import com.bulkemail.pro.repository.TagRepository;
 import com.bulkemail.pro.security.TenantContext;
 import org.springframework.cache.annotation.CacheEvict;
@@ -32,6 +34,7 @@ public class ContactService {
     private final ContactRepository contactRepository;
     private final TagRepository tagRepository;
     private final EmailValidationService emailValidationService;
+    private final SuppressionListRepository suppressionListRepository;
 
     private static final Pattern EMAIL_PATTERN =
         Pattern.compile("^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$");
@@ -556,12 +559,50 @@ public class ContactService {
         }
     }
 
-    public void unsubscribe(String token) {
-        contactRepository.findByUnsubscribeToken(token).ifPresent(contact -> {
-            contact.setStatus(Contact.ContactStatus.UNSUBSCRIBED);
-            contact.setUnsubscribedAt(java.time.LocalDateTime.now());
-            contactRepository.save(contact);
+    /**
+     * Marks the contact UNSUBSCRIBED and adds them to the suppression list so
+     * re-imports cannot accidentally re-enable sending to an opted-out address.
+     *
+     * @return the contact if found (so the caller can update campaign stats / tracking)
+     */
+    public Optional<Contact> unsubscribe(String token) {
+        Optional<Contact> found = contactRepository.findByUnsubscribeToken(token);
+        found.ifPresent(contact -> {
+            if (contact.getStatus() != Contact.ContactStatus.UNSUBSCRIBED) {
+                contact.setStatus(Contact.ContactStatus.UNSUBSCRIBED);
+                contact.setUnsubscribedAt(java.time.LocalDateTime.now());
+                contactRepository.save(contact);
+            }
+            // Suppress regardless of prior status so re-imports can't override the opt-out
+            Long orgId = contact.getOrganizationId();
+            boolean alreadySuppressed = orgId != null
+                    ? suppressionListRepository.existsByOrganizationIdAndEmailIgnoreCase(orgId, contact.getEmail())
+                    : suppressionListRepository.existsByOrganizationIdIsNullAndEmailIgnoreCase(contact.getEmail());
+            if (!alreadySuppressed) {
+                suppressionListRepository.save(new SuppressionList(
+                        orgId, contact.getEmail(),
+                        SuppressionList.Reason.UNSUBSCRIBE, "link-click"));
+            }
         });
+        return found;
+    }
+
+    /**
+     * Reverses an accidental unsubscribe. Removes the suppression entry and
+     * restores the contact to ACTIVE. Only valid while the token is still trusted.
+     */
+    public Optional<Contact> resubscribe(String token) {
+        Optional<Contact> found = contactRepository.findByUnsubscribeToken(token);
+        found.ifPresent(contact -> {
+            contact.setStatus(Contact.ContactStatus.ACTIVE);
+            contact.setUnsubscribedAt(null);
+            contactRepository.save(contact);
+            // Remove the suppression entry so future sends are allowed
+            Long orgId = contact.getOrganizationId();
+            suppressionListRepository.findByEmailAndOrg(contact.getEmail(), orgId != null ? orgId : -1L)
+                    .ifPresent(suppressionListRepository::delete);
+        });
+        return found;
     }
 
     @Cacheable(value = "contact-stats", key = "T(com.bulkemail.pro.security.TenantContext).getOrganizationId()")

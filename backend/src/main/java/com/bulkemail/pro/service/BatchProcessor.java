@@ -204,7 +204,8 @@ public class BatchProcessor {
             if (contact.getStatus() != Contact.ContactStatus.ACTIVE) continue;
 
             String trackingId    = UUID.randomUUID().toString();
-            String unsubscribeUrl = unsubscribeBaseUrl + "/unsubscribe/" + contact.getUnsubscribeToken();
+            String unsubscribeUrl = unsubscribeBaseUrl + "/unsubscribe/" + contact.getUnsubscribeToken()
+                    + "?c=" + campaign.getId();
 
             String html = mergeTagService.merge(
                     campaign.getHtmlContent(), contact, unsubscribeUrl, trackingBaseUrl);

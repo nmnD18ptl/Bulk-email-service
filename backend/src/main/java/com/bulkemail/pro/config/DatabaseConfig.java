@@ -1,7 +1,6 @@
 package com.bulkemail.pro.config;
 
 import com.zaxxer.hikari.HikariDataSource;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,9 +11,13 @@ import org.springframework.context.event.EventListener;
 import javax.sql.DataSource;
 
 /**
- * Registers HikariCP pool metrics with Micrometer and logs the active
- * database URL at startup so operators can confirm the right database
- * is connected without exposing credentials.
+ * Logs the active database URL at startup so operators can confirm the right
+ * database is connected without exposing credentials.
+ *
+ * HikariCP pool metrics are registered automatically by Spring Boot's
+ * Micrometer auto-configuration — no manual setMetricRegistry() needed.
+ * Calling setMetricRegistry() after Spring has already set a
+ * MetricsTrackerFactory causes an IllegalStateException at startup.
  */
 @Configuration
 public class DatabaseConfig {
@@ -22,20 +25,17 @@ public class DatabaseConfig {
     private static final Logger log = LoggerFactory.getLogger(DatabaseConfig.class);
 
     private final DataSource dataSource;
-    private final MeterRegistry meterRegistry;
 
     @Value("${spring.datasource.url}")
     private String datasourceUrl;
 
-    public DatabaseConfig(DataSource dataSource, MeterRegistry meterRegistry) {
+    public DatabaseConfig(DataSource dataSource) {
         this.dataSource = dataSource;
-        this.meterRegistry = meterRegistry;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
         if (dataSource instanceof HikariDataSource hikari) {
-            hikari.setMetricRegistry(meterRegistry);
             log.info("Database connected: {} | pool={} max={} min={}",
                 maskCredentials(datasourceUrl),
                 hikari.getPoolName(),

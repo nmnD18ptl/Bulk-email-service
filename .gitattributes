@@ -1,0 +1,30 @@
+# Force Unix line endings for shell scripts — required for Docker Alpine builds.
+# Without this, Windows git checkouts produce CRLF which breaks #!/bin/sh shebangs.
+backend/mvnw        text eol=lf
+backend/mvnw.cmd    text eol=crlf
+
+# Standard text normalisation for the rest of the repo
+*.java              text eol=lf
+*.xml               text eol=lf
+*.yml               text eol=lf
+*.yaml              text eol=lf
+*.properties        text eol=lf
+*.sql               text eol=lf
+*.json              text eol=lf
+*.ts                text eol=lf
+*.html              text eol=lf
+*.css               text eol=lf
+*.scss              text eol=lf
+*.sh                text eol=lf
+Dockerfile          text eol=lf
+*.dockerignore      text eol=lf
+*.gitignore         text eol=lf
+
+# Binaries — never touch line endings
+*.jar               binary
+*.png               binary
+*.jpg               binary
+*.ico               binary
+*.gif               binary
+*.zip               binary
+*.gz                binary

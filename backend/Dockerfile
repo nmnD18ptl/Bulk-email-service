@@ -11,7 +11,8 @@ WORKDIR /app
 COPY .mvn/   .mvn/
 COPY mvnw    pom.xml ./
 
-RUN chmod +x ./mvnw \
+RUN sed -i 's/\r$//' ./mvnw \
+ && chmod +x ./mvnw \
  && ./mvnw dependency:go-offline -B --no-transfer-progress
 
 # Now copy source and build the fat JAR (tests skipped — CI runs them separately).

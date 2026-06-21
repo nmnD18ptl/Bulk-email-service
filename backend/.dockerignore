@@ -1,0 +1,24 @@
+# Build output — never send to Docker daemon
+target/
+
+# Maven wrapper binary — downloaded at build time by mvnw
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE and OS noise
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs and local data
+logs/
+*.log
+*.mv.db
+*.trace.db
+
+# Local environment overrides — secrets must come from Railway env vars
+.env
+.env.*
+application-secret.yml
+application-local.yml

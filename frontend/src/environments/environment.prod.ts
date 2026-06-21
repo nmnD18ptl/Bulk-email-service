@@ -1,6 +1,6 @@
 export const environment = {
   production: true,
-  apiUrl: 'http://localhost:8080/api',
-  wsUrl: 'http://localhost:8080/ws',
-  trackingUrl: 'http://localhost:8080'
+  apiUrl: 'https://bulk-email-service-production.up.railway.app/api',
+  wsUrl: 'https://bulk-email-service-production.up.railway.app/ws',
+  trackingUrl: 'https://bulk-email-service-production.up.railway.app'
 };

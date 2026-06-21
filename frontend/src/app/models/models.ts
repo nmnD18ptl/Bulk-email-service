@@ -184,6 +184,14 @@ export interface AppSetting {
 export interface ImportResult {
   imported: number;
   duplicates: number;
+  suppressed: number;
   invalid: number;
   total: number;
+}
+
+/** Returned by POST /api/contacts/import/preview */
+export interface ImportPreview {
+  headers: string[];
+  sampleRows: string[][];
+  totalRows: number;
 }

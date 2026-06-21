@@ -5,7 +5,7 @@ import { environment } from '../../environments/environment';
 import {
   Contact, Tag, SmtpConfig, Template, Campaign, CampaignStats,
   SpamAnalysis, WarmupPlan, WarmupScheduleDay, DashboardStats,
-  PageResponse, AppSetting, ImportResult
+  PageResponse, AppSetting, ImportResult, ImportPreview
 } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
@@ -36,11 +36,25 @@ export class ApiService {
     return this.http.delete<void>(`${this.api}/contacts/${id}`);
   }
 
-  importContacts(file: File, tags?: string[]): Observable<ImportResult> {
+  /** Step 1: parse headers + sample rows without saving anything. */
+  previewImport(file: File): Observable<ImportPreview> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<ImportPreview>(`${this.api}/contacts/import/preview`, formData);
+  }
+
+  /**
+   * Step 2 (guided): import with an explicit column mapping supplied by the user.
+   * Step 2 (legacy): omit columnMapping to use the original auto-detection path.
+   */
+  importContacts(file: File, tags?: string[], columnMapping?: Record<string, number>): Observable<ImportResult> {
     const formData = new FormData();
     formData.append('file', file);
     if (tags?.length) {
       tags.forEach(t => formData.append('tags', t));
+    }
+    if (columnMapping) {
+      formData.append('columnMapping', JSON.stringify(columnMapping));
     }
     return this.http.post<ImportResult>(`${this.api}/contacts/import`, formData);
   }

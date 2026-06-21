@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
-import { Contact, Tag, PageResponse } from '../../models/models';
+import { Contact, Tag, PageResponse, ImportPreview, ImportResult } from '../../models/models';
 
 @Component({
   selector: 'app-contacts',
@@ -54,6 +54,68 @@ import { Contact, Tag, PageResponse } from '../../models/models';
       border-radius: 8px; margin-bottom: 12px;
       span { font-size: 14px; color: var(--primary); font-weight: 500; }
     }
+
+    /* ── Import wizard ── */
+    .import-steps {
+      display: flex; align-items: center; gap: 6px;
+      padding: 16px 24px 0;
+    }
+    .import-step-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 500; color: var(--gray-400);
+      .step-num {
+        width: 22px; height: 22px; border-radius: 50%;
+        background: var(--gray-200); color: var(--gray-500);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 700; flex-shrink: 0;
+      }
+      &.active { color: var(--primary); .step-num { background: var(--primary); color: white; } }
+      &.done   { color: var(--success); .step-num { background: var(--success); color: white; } }
+    }
+    .step-sep { color: var(--gray-300); font-size: 14px; }
+
+    .preview-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--gray-200); border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .preview-table {
+      width: 100%; border-collapse: collapse; font-size: 12px; min-width: 300px;
+      th {
+        padding: 8px 12px; text-align: left; white-space: nowrap;
+        background: var(--gray-100); border-bottom: 1px solid var(--gray-200);
+        color: var(--gray-600); font-weight: 600;
+      }
+      td {
+        padding: 6px 12px; color: var(--gray-700);
+        max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        border-bottom: 1px solid var(--gray-100);
+      }
+    }
+
+    .map-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .map-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; background: var(--gray-50);
+      border-radius: 6px; border: 1px solid var(--gray-200);
+      &.required-missing { border-color: var(--danger); }
+    }
+    .map-label { flex: 1; font-size: 13px; font-weight: 500; color: var(--gray-700); }
+    .map-select {
+      padding: 6px 8px; border: 1px solid var(--gray-300);
+      border-radius: 6px; font-size: 13px; background: white;
+      min-width: 160px; max-width: 200px; outline: none;
+    }
+
+    .result-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+      max-width: 480px; margin: 0 auto 24px;
+    }
+    .result-card {
+      background: var(--gray-50); border-radius: 8px; padding: 16px; text-align: center;
+      .result-num { font-size: 28px; font-weight: 700; }
+      .result-label { font-size: 12px; color: var(--gray-500); margin-top: 4px; }
+    }
   `],
   template: `
     <div class="page-content">
@@ -66,7 +128,7 @@ import { Contact, Tag, PageResponse } from '../../models/models';
           <button class="btn btn-secondary" (click)="exportContacts()">
             <i class="fas fa-download"></i> Export
           </button>
-          <button class="btn btn-primary" (click)="showImportModal = true">
+          <button class="btn btn-primary" (click)="openImportModal()">
             <i class="fas fa-upload"></i> Import
           </button>
           <button class="btn btn-primary" (click)="openAddModal()">
@@ -214,59 +276,241 @@ import { Contact, Tag, PageResponse } from '../../models/models';
       </div>
     </div>
 
-    <!-- Import Modal -->
+    <!-- ═══════════════════════════════════════════════════════
+         Import Wizard Modal  (3-step: Upload → Map → Result)
+         ═══════════════════════════════════════════════════════ -->
     @if (showImportModal) {
-      <div class="modal-overlay" (click)="showImportModal = false">
-        <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-overlay" (click)="closeImportModal()">
+        <div class="modal" style="max-width:680px" (click)="$event.stopPropagation()">
+
+          <!-- Header -->
           <div class="modal-header">
             <h3>Import Contacts</h3>
-            <button class="close-btn" (click)="showImportModal = false">
+            <button class="close-btn" (click)="closeImportModal()">
               <i class="fas fa-times"></i>
             </button>
           </div>
-          <div class="modal-body">
-            <div class="import-zone" [class.drag-over]="isDragging"
-                 (dragover)="$event.preventDefault(); isDragging=true"
-                 (dragleave)="isDragging=false"
-                 (drop)="onFileDrop($event)"
-                 (click)="fileInput.click()">
-              <i class="fas fa-cloud-upload-alt"></i>
-              <p>Drop your <strong>CSV or Excel (.xlsx)</strong> file here</p>
-              <p style="margin-top:8px">or click to browse</p>
-              <input #fileInput type="file" accept=".csv,.xlsx" style="display:none"
-                     (change)="onFileSelect($event)">
+
+          <!-- Step indicator -->
+          <div class="import-steps">
+            <div class="import-step-item"
+                 [class.active]="importStep === 'upload'"
+                 [class.done]="importStep === 'map' || importStep === 'result'">
+              <span class="step-num">
+                @if (importStep === 'map' || importStep === 'result') { <i class="fas fa-check" style="font-size:10px"></i> }
+                @else { 1 }
+              </span>
+              Upload
             </div>
-            @if (importFile) {
-              <div class="alert alert-info" style="margin-top:16px">
-                <i class="fas fa-file"></i>
-                <span>{{ importFile.name }} ({{ (importFile.size / 1024) | number:'1.0-0' }} KB)</span>
-              </div>
-            }
-            <div class="form-group" style="margin-top:16px">
-              <label>Add tags to imported contacts (optional)</label>
-              <input class="form-control" placeholder="tag1, tag2, tag3 (comma separated)"
-                     [(ngModel)]="importTagsInput">
+            <span class="step-sep">›</span>
+            <div class="import-step-item"
+                 [class.active]="importStep === 'map'"
+                 [class.done]="importStep === 'result'">
+              <span class="step-num">
+                @if (importStep === 'result') { <i class="fas fa-check" style="font-size:10px"></i> }
+                @else { 2 }
+              </span>
+              Map Columns
             </div>
-            <div class="alert alert-info">
-              <i class="fas fa-info-circle"></i>
-              <div>
-                <strong>Supported columns:</strong> Email, FirstName, LastName, Company, Country, Phone, CustomField1-5<br>
-                Duplicates will be skipped automatically.
-              </div>
+            <span class="step-sep">›</span>
+            <div class="import-step-item" [class.active]="importStep === 'result'">
+              <span class="step-num">3</span>
+              Result
             </div>
           </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showImportModal = false">Cancel</button>
-            <button class="btn btn-primary" (click)="doImport()" [disabled]="!importFile || importing">
-              <span *ngIf="importing" class="spinner"></span>
-              {{ importing ? 'Importing...' : 'Import Contacts' }}
-            </button>
-          </div>
+
+          <!-- ── STEP 1: Upload ── -->
+          @if (importStep === 'upload') {
+            <div class="modal-body">
+              <div class="import-zone" [class.drag-over]="isDragging"
+                   (dragover)="$event.preventDefault(); isDragging = true"
+                   (dragleave)="isDragging = false"
+                   (drop)="onFileDrop($event)"
+                   (click)="fileInput.click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Drop your <strong>CSV or Excel (.xlsx)</strong> file here</p>
+                <p style="margin-top:8px">or click to browse</p>
+                <input #fileInput type="file" accept=".csv,.xlsx" style="display:none"
+                       (change)="onFileSelect($event)">
+              </div>
+
+              @if (importFile) {
+                <div class="alert alert-info" style="margin-top:16px">
+                  <i class="fas fa-file-excel"></i>
+                  <span>{{ importFile.name }}
+                    <span style="color:var(--gray-400);margin-left:6px">({{ (importFile.size / 1024) | number:'1.0-0' }} KB)</span>
+                  </span>
+                </div>
+              }
+
+              <div class="form-group" style="margin-top:16px">
+                <label>Add tags to imported contacts (optional)</label>
+                <input class="form-control" placeholder="newsletter, vip, 2024 (comma separated)"
+                       [(ngModel)]="importTagsInput">
+              </div>
+
+              <div class="alert alert-info" style="margin-top:4px">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                  Any column layout works. You will map columns to fields on the next step.<br>
+                  Duplicates, unsubscribed, and bounced contacts are skipped automatically.
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-secondary" (click)="closeImportModal()">Cancel</button>
+              <button class="btn btn-primary" (click)="previewFile()" [disabled]="!importFile || previewing">
+                @if (previewing) { <span class="spinner"></span> }
+                {{ previewing ? 'Reading file...' : 'Next: Map Columns' }}
+                @if (!previewing) { <i class="fas fa-arrow-right" style="margin-left:6px"></i> }
+              </button>
+            </div>
+          }
+
+          <!-- ── STEP 2: Map Columns ── -->
+          @if (importStep === 'map') {
+            <div class="modal-body">
+
+              <!-- File summary -->
+              <div style="background:var(--gray-50);border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:16px">
+                <i class="fas fa-file-excel" style="color:var(--success);font-size:20px"></i>
+                <div>
+                  <div style="font-weight:600;font-size:14px">{{ importFile?.name }}</div>
+                  <div style="font-size:12px;color:var(--gray-500);margin-top:2px">
+                    {{ importPreview?.headers?.length }} columns detected &nbsp;·&nbsp;
+                    {{ importPreview?.totalRows | number }} data rows
+                  </div>
+                </div>
+              </div>
+
+              <!-- Data preview table -->
+              <div style="font-weight:600;font-size:13px;color:var(--gray-600);margin-bottom:8px">
+                Preview (first 3 rows of your file)
+              </div>
+              <div class="preview-table-wrap">
+                <table class="preview-table">
+                  <thead>
+                    <tr>
+                      @for (h of importPreview?.headers; track $index) {
+                        <th>{{ getColLabel($index) }}: {{ h }}</th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of importPreview?.sampleRows?.slice(0, 3); track $index) {
+                      <tr>
+                        @for (cell of row; track $index) {
+                          <td>{{ cell || '—' }}</td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Mapping form -->
+              <div style="font-weight:600;font-size:14px;margin-bottom:12px">
+                Tell us which column is which
+              </div>
+              <div class="map-grid">
+                @for (field of CONTACT_FIELDS; track field.key) {
+                  <div class="map-row" [class.required-missing]="field.required && columnMapping[field.key] === null">
+                    <div class="map-label">
+                      {{ field.label }}
+                      @if (field.required) { <span style="color:var(--danger)"> *</span> }
+                    </div>
+                    <select class="map-select" (change)="onMappingChange(field.key, $event)">
+                      <option value="" [selected]="columnMapping[field.key] === null">
+                        — Don't import —
+                      </option>
+                      @for (h of importPreview?.headers; track $index) {
+                        <option [value]="$index" [selected]="columnMapping[field.key] === $index">
+                          {{ getColLabel($index) }}: {{ h }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                }
+              </div>
+
+              @if (!mappingValid()) {
+                <div style="color:var(--danger);font-size:13px;margin-top:14px;display:flex;align-items:center;gap:6px">
+                  <i class="fas fa-exclamation-circle"></i>
+                  Please select which column contains email addresses.
+                </div>
+              }
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-secondary" (click)="importStep = 'upload'">
+                <i class="fas fa-arrow-left" style="margin-right:6px"></i> Back
+              </button>
+              <button class="btn btn-primary" (click)="doImportWithMapping()"
+                      [disabled]="!mappingValid() || importing">
+                @if (importing) { <span class="spinner"></span> }
+                {{ importing ? 'Importing...' : 'Import Contacts' }}
+              </button>
+            </div>
+          }
+
+          <!-- ── STEP 3: Result ── -->
+          @if (importStep === 'result') {
+            <div class="modal-body" style="text-align:center;padding-top:32px;padding-bottom:32px">
+              <div style="font-size:52px;margin-bottom:16px">✅</div>
+              <h3 style="color:var(--gray-800);margin-bottom:24px">Import Complete</h3>
+
+              <div class="result-grid">
+                <div class="result-card">
+                  <div class="result-num" style="color:var(--primary)">{{ importResult?.imported | number }}</div>
+                  <div class="result-label">Imported</div>
+                </div>
+                <div class="result-card">
+                  <div class="result-num" style="color:var(--gray-500)">{{ importResult?.duplicates | number }}</div>
+                  <div class="result-label">Duplicates</div>
+                </div>
+                <div class="result-card">
+                  <div class="result-num" style="color:var(--warning)">{{ importResult?.suppressed | number }}</div>
+                  <div class="result-label">Suppressed</div>
+                </div>
+                <div class="result-card">
+                  <div class="result-num" style="color:var(--danger)">{{ importResult?.invalid | number }}</div>
+                  <div class="result-label">Invalid</div>
+                </div>
+              </div>
+
+              @if ((importResult?.imported ?? 0) === 0) {
+                <div class="alert alert-warning" style="max-width:440px;margin:0 auto">
+                  <i class="fas fa-exclamation-triangle"></i>
+                  <div>
+                    No contacts were imported.
+                    @if ((importResult?.invalid ?? 0) > 0) {
+                      Check that the Email column contains valid email addresses.
+                    } @else if ((importResult?.duplicates ?? 0) > 0) {
+                      All contacts already exist in your list.
+                    } @else {
+                      Please go back and verify your column mapping.
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+
+            <div class="modal-footer">
+              @if ((importResult?.imported ?? 0) === 0) {
+                <button class="btn btn-secondary" (click)="importStep = 'map'">
+                  <i class="fas fa-arrow-left" style="margin-right:6px"></i> Fix Mapping
+                </button>
+              }
+              <button class="btn btn-primary" (click)="closeImportModal()">Done</button>
+            </div>
+          }
+
         </div>
       </div>
     }
 
-    <!-- Add/Edit Modal -->
+    <!-- Add/Edit Modal — unchanged -->
     @if (showEditModal) {
       <div class="modal-overlay" (click)="showEditModal = false">
         <div class="modal" (click)="$event.stopPropagation()">
@@ -313,7 +557,7 @@ import { Contact, Tag, PageResponse } from '../../models/models';
           <div class="modal-footer">
             <button class="btn btn-secondary" (click)="showEditModal = false">Cancel</button>
             <button class="btn btn-primary" (click)="saveContact()" [disabled]="saving">
-              <span *ngIf="saving" class="spinner"></span>
+              @if (saving) { <span class="spinner"></span> }
               Save Contact
             </button>
           </div>
@@ -323,8 +567,13 @@ import { Contact, Tag, PageResponse } from '../../models/models';
   `
 })
 export class ContactsComponent implements OnInit {
+
+  // ── Contact list state (unchanged) ──────────────────────────────────────────
   contacts: Contact[] = [];
-  page: PageResponse<Contact> = { content: [], totalElements: 0, totalPages: 0, size: 50, number: 0, first: true, last: true };
+  page: PageResponse<Contact> = {
+    content: [], totalElements: 0, totalPages: 0,
+    size: 50, number: 0, first: true, last: true
+  };
   loading = false;
   currentPage = 0;
   searchQuery = '';
@@ -333,20 +582,44 @@ export class ContactsComponent implements OnInit {
   contactStats: Record<string, number> = {};
   Math = Math;
 
-  showImportModal = false;
+  // ── Edit modal state (unchanged) ────────────────────────────────────────────
   showEditModal = false;
-  importFile: File | null = null;
-  importTagsInput = '';
-  importing = false;
-  isDragging = false;
   editingContact: Partial<Contact> | null = null;
   saving = false;
 
+  // ── Import wizard state ──────────────────────────────────────────────────────
+  showImportModal = false;
+  importStep: 'upload' | 'map' | 'result' = 'upload';
+  importFile: File | null = null;
+  importTagsInput = '';
+  isDragging = false;
+  previewing = false;
+  importing = false;
+  importPreview: ImportPreview | null = null;
+  importResult: ImportResult | null = null;
+  /** field key → 0-based column index in the source file, or null = don't import */
+  columnMapping: Record<string, number | null> = {};
+
+  // ── Field definitions for the mapping UI ────────────────────────────────────
+  readonly CONTACT_FIELDS = [
+    { key: 'email',        label: 'Email',          required: true  },
+    { key: 'firstName',    label: 'First Name',      required: false },
+    { key: 'lastName',     label: 'Last Name',       required: false },
+    { key: 'company',      label: 'Company',         required: false },
+    { key: 'country',      label: 'Country / State', required: false },
+    { key: 'phone',        label: 'Phone',           required: false },
+    { key: 'customField1', label: 'Custom Field 1',  required: false },
+    { key: 'customField2', label: 'Custom Field 2',  required: false },
+    { key: 'customField3', label: 'Custom Field 3',  required: false },
+    { key: 'customField4', label: 'Custom Field 4',  required: false },
+    { key: 'customField5', label: 'Custom Field 5',  required: false },
+  ];
+
   statusPills = [
-    { key: 'total', label: 'Total', class: 'all' },
-    { key: 'active', label: 'Active', class: 'active' },
-    { key: 'unsubscribed', label: 'Unsubscribed', class: 'unsubscribed' },
-    { key: 'bounced', label: 'Bounced', class: 'bounced' }
+    { key: 'total',       label: 'Total',        class: 'all' },
+    { key: 'active',      label: 'Active',       class: 'active' },
+    { key: 'unsubscribed',label: 'Unsubscribed', class: 'unsubscribed' },
+    { key: 'bounced',     label: 'Bounced',      class: 'bounced' }
   ];
 
   private searchTimer: any;
@@ -357,6 +630,8 @@ export class ContactsComponent implements OnInit {
     this.loadContacts();
     this.loadStats();
   }
+
+  // ── Contact list methods (all unchanged) ────────────────────────────────────
 
   loadContacts(): void {
     this.loading = true;
@@ -459,36 +734,6 @@ export class ContactsComponent implements OnInit {
     });
   }
 
-  onFileDrop(event: DragEvent): void {
-    event.preventDefault();
-    this.isDragging = false;
-    const file = event.dataTransfer?.files[0];
-    if (file) this.importFile = file;
-  }
-
-  onFileSelect(event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (file) this.importFile = file;
-  }
-
-  doImport(): void {
-    if (!this.importFile) return;
-    this.importing = true;
-    const tags = this.importTagsInput ? this.importTagsInput.split(',').map(t => t.trim()).filter(Boolean) : [];
-    this.api.importContacts(this.importFile, tags).subscribe({
-      next: (result) => {
-        this.toast.success('Import Complete',
-          `Imported: ${result.imported}, Duplicates: ${result.duplicates}, Invalid: ${result.invalid}`);
-        this.showImportModal = false;
-        this.importing = false;
-        this.importFile = null;
-        this.loadContacts();
-        this.loadStats();
-      },
-      error: () => { this.importing = false; this.toast.error('Import failed'); }
-    });
-  }
-
   exportContacts(): void {
     this.api.exportContacts(this.selectedStatus || undefined).subscribe(blob => {
       const url = URL.createObjectURL(blob);
@@ -504,5 +749,148 @@ export class ContactsComponent implements OnInit {
       'BOUNCED': 'badge-danger', 'COMPLAINED': 'badge-danger', 'INVALID': 'badge-gray'
     };
     return map[status] || 'badge-gray';
+  }
+
+  // ── Import wizard methods ────────────────────────────────────────────────────
+
+  openImportModal(): void {
+    this.showImportModal = true;
+  }
+
+  closeImportModal(): void {
+    this.showImportModal = false;
+    this.importStep = 'upload';
+    this.importFile = null;
+    this.importPreview = null;
+    this.columnMapping = {};
+    this.importResult = null;
+    this.importTagsInput = '';
+    this.previewing = false;
+    this.importing = false;
+    this.isDragging = false;
+  }
+
+  onFileDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.isDragging = false;
+    const file = event.dataTransfer?.files[0];
+    if (file) this.importFile = file;
+  }
+
+  onFileSelect(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) this.importFile = file;
+  }
+
+  /** Step 1 → 2: call preview endpoint, then auto-suggest mappings. */
+  previewFile(): void {
+    if (!this.importFile) return;
+    this.previewing = true;
+    this.api.previewImport(this.importFile).subscribe({
+      next: (preview) => {
+        this.importPreview = preview;
+        this.columnMapping = this.autoSuggest(preview.headers);
+        this.importStep = 'map';
+        this.previewing = false;
+      },
+      error: (e) => {
+        this.previewing = false;
+        this.toast.error('Could not read file', e.error?.error || 'Please check the file format and try again.');
+      }
+    });
+  }
+
+  /** Step 2 → 3: import using the mapping the user confirmed. */
+  doImportWithMapping(): void {
+    if (!this.importFile || !this.mappingValid()) return;
+    this.importing = true;
+
+    const tags = this.importTagsInput
+      ? this.importTagsInput.split(',').map(t => t.trim()).filter(Boolean)
+      : [];
+
+    // Strip null entries — backend only needs columns that are actually mapped
+    const mapping: Record<string, number> = {};
+    Object.entries(this.columnMapping).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) mapping[k] = v;
+    });
+
+    this.api.importContacts(this.importFile, tags, mapping).subscribe({
+      next: (result) => {
+        this.importResult = result;
+        this.importStep = 'result';
+        this.importing = false;
+        this.loadContacts();
+        this.loadStats();
+      },
+      error: (e) => {
+        this.importing = false;
+        this.toast.error('Import failed', e.error?.error || 'Please try again.');
+      }
+    });
+  }
+
+  /** Returns true only when the required Email field is mapped. */
+  mappingValid(): boolean {
+    return this.columnMapping['email'] !== null && this.columnMapping['email'] !== undefined;
+  }
+
+  /** Fires when the user changes a mapping dropdown. */
+  onMappingChange(fieldKey: string, event: Event): void {
+    const val = (event.target as HTMLSelectElement).value;
+    this.columnMapping[fieldKey] = val === '' ? null : parseInt(val, 10);
+  }
+
+  /**
+   * Converts a 0-based column index to a spreadsheet-style letter label.
+   * 0 → A, 1 → B, … 25 → Z, 26 → AA, etc.
+   */
+  getColLabel(index: number): string {
+    let label = '';
+    let n = index;
+    do {
+      label = String.fromCharCode(65 + (n % 26)) + label;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return label;
+  }
+
+  /**
+   * Scans detected header names and returns an initial mapping suggestion.
+   * Normalises headers to lowercase alphanumeric before matching so
+   * "Email Address", "EMAIL", "e-mail", "Email ID" all resolve to the
+   * email field automatically.
+   */
+  private autoSuggest(headers: string[]): Record<string, number | null> {
+    const mapping: Record<string, number | null> = {};
+    this.CONTACT_FIELDS.forEach(f => (mapping[f.key] = null));
+
+    headers.forEach((h, i) => {
+      const n = h.toLowerCase().replace(/[^a-z0-9]/g, ''); // normalised
+
+      if (mapping['email'] === null &&
+          (n === 'email' || n.includes('email') || n === 'mail' || n === 'emailid' || n === 'emails')) {
+        mapping['email'] = i;
+      } else if (mapping['firstName'] === null &&
+                 (n === 'firstname' || n === 'fname' || n === 'givenname' || n === 'name')) {
+        mapping['firstName'] = i;
+      } else if (mapping['lastName'] === null &&
+                 (n === 'lastname' || n === 'lname' || n === 'surname' || n === 'familyname')) {
+        mapping['lastName'] = i;
+      } else if (mapping['company'] === null &&
+                 (n === 'company' || n === 'companyname' || n === 'organization' ||
+                  n === 'organisation' || n === 'business' || n === 'org')) {
+        mapping['company'] = i;
+      } else if (mapping['country'] === null &&
+                 (n === 'country' || n === 'state' || n === 'region' || n === 'location')) {
+        mapping['country'] = i;
+      } else if (mapping['phone'] === null &&
+                 (n === 'phone' || n === 'mobile' || n === 'telephone' || n === 'tel' ||
+                  n === 'mob' || n === 'phonenumber' || n === 'mobilenumber' || n === 'contact')) {
+        mapping['phone'] = i;
+      }
+    });
+
+    return mapping;
   }
 }

@@ -1,5 +1,6 @@
 package com.bulkemail.pro.service;
 
+import com.bulkemail.pro.model.dto.ImportPreviewResponse;
 import com.bulkemail.pro.model.entity.Contact;
 import com.bulkemail.pro.model.entity.Tag;
 import com.bulkemail.pro.repository.ContactRepository;
@@ -390,6 +391,169 @@ public class ContactService {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;
+    }
+
+    // ── Column-mapping import (new) ───────────────────────────────────────────
+
+    /**
+     * Parses the uploaded file and returns its column headers plus up to five
+     * sample data rows.  Nothing is persisted — this is a read-only preview
+     * used to power the column-mapping UI on the frontend.
+     */
+    public ImportPreviewResponse previewImport(MultipartFile file) throws Exception {
+        String filename = resolvedFilename(file);
+        validateFilename(filename);
+        if (file.isEmpty()) throw new IllegalArgumentException("The uploaded file is empty.");
+        return filename.endsWith(".xlsx") ? previewExcel(file) : previewCsv(file);
+    }
+
+    /**
+     * Imports contacts using an explicit column-index mapping supplied by the
+     * user rather than auto-detecting headers.
+     *
+     * {@code columnMapping} keys are camelCase field names
+     * (email, firstName, lastName, company, country, phone, customField1 … customField5).
+     * Values are 0-based column indices in the source file.  Null values mean
+     * "don't import this field".
+     *
+     * All existing duplicate-detection, suppression, and tag logic in
+     * {@link #processImportedRows} is reused unchanged.
+     */
+    public Map<String, Object> importWithMapping(MultipartFile file,
+                                                 List<String> tagNames,
+                                                 Map<String, Integer> columnMapping) throws Exception {
+        String filename = resolvedFilename(file);
+        validateFilename(filename);
+        if (file.isEmpty()) throw new IllegalArgumentException("The uploaded file is empty.");
+        if (columnMapping.get("email") == null) {
+            throw new IllegalArgumentException("Column mapping must include the email field.");
+        }
+        List<Map<String, String>> rows = filename.endsWith(".xlsx")
+                ? parseExcelWithMapping(file, columnMapping)
+                : parseCsvWithMapping(file, columnMapping);
+        return processImportedRows(rows, tagNames);
+    }
+
+    // ── Private: preview helpers ──────────────────────────────────────────────
+
+    private ImportPreviewResponse previewExcel(MultipartFile file) throws Exception {
+        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+            Sheet sheet = workbook.getSheetAt(0);
+            if (sheet == null || sheet.getLastRowNum() < 0) {
+                return new ImportPreviewResponse(List.of(), List.of(), 0);
+            }
+            Row headerRow = sheet.getRow(0);
+            if (headerRow == null) return new ImportPreviewResponse(List.of(), List.of(), 0);
+
+            List<String> headers = new ArrayList<>();
+            for (Cell cell : headerRow) {
+                headers.add(cleanValue(getCellValue(cell)));
+            }
+
+            List<List<String>> sampleRows = new ArrayList<>();
+            int lastRow = sheet.getLastRowNum();
+            for (int i = 1; i <= Math.min(5, lastRow); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+                List<String> rowData = new ArrayList<>();
+                for (int j = 0; j < headers.size(); j++) {
+                    rowData.add(cleanValue(getCellValue(row.getCell(j))));
+                }
+                sampleRows.add(rowData);
+            }
+            return new ImportPreviewResponse(headers, sampleRows, lastRow);
+        }
+    }
+
+    private ImportPreviewResponse previewCsv(MultipartFile file) throws Exception {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) return new ImportPreviewResponse(List.of(), List.of(), 0);
+
+            String[] headerArr = splitCsvLine(headerLine);
+            List<String> headers = new ArrayList<>();
+            for (String h : headerArr) headers.add(cleanValue(h));
+
+            List<List<String>> sampleRows = new ArrayList<>();
+            int totalRows = 0;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                totalRows++;
+                if (sampleRows.size() < 5) {
+                    String[] values = splitCsvLine(line);
+                    List<String> rowData = new ArrayList<>();
+                    for (int i = 0; i < headers.size(); i++) {
+                        rowData.add(i < values.length ? cleanValue(values[i]) : "");
+                    }
+                    sampleRows.add(rowData);
+                }
+            }
+            return new ImportPreviewResponse(headers, sampleRows, totalRows);
+        }
+    }
+
+    // ── Private: mapping-based parsers ───────────────────────────────────────
+
+    private List<Map<String, String>> parseExcelWithMapping(MultipartFile file,
+                                                            Map<String, Integer> mapping) throws Exception {
+        List<Map<String, String>> rows = new ArrayList<>();
+        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+            Sheet sheet = workbook.getSheetAt(0);
+            if (sheet == null) return rows;
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {   // row 0 = headers, skip
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+                Map<String, String> rowData = new LinkedHashMap<>();
+                for (Map.Entry<String, Integer> entry : mapping.entrySet()) {
+                    if (entry.getValue() != null) {
+                        // Lowercase key so existing extractField() lookups match
+                        rowData.put(entry.getKey().toLowerCase(),
+                                cleanValue(getCellValue(row.getCell(entry.getValue()))));
+                    }
+                }
+                rows.add(rowData);
+            }
+        }
+        return rows;
+    }
+
+    private List<Map<String, String>> parseCsvWithMapping(MultipartFile file,
+                                                          Map<String, Integer> mapping) throws Exception {
+        List<Map<String, String>> rows = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
+            reader.readLine(); // skip header row
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] values = splitCsvLine(line);
+                Map<String, String> rowData = new LinkedHashMap<>();
+                for (Map.Entry<String, Integer> entry : mapping.entrySet()) {
+                    if (entry.getValue() != null) {
+                        int idx = entry.getValue();
+                        rowData.put(entry.getKey().toLowerCase(),
+                                idx < values.length ? cleanValue(values[idx]) : "");
+                    }
+                }
+                rows.add(rowData);
+            }
+        }
+        return rows;
+    }
+
+    // ── Private: shared file-validation helpers ───────────────────────────────
+
+    private static String resolvedFilename(MultipartFile file) {
+        return file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
+    }
+
+    private static void validateFilename(String filename) {
+        if (filename.endsWith(".xls")) {
+            throw new IllegalArgumentException(
+                    "Old Excel format (.xls) is not supported. Please save the file as .xlsx and re-upload.");
+        }
+        if (!filename.endsWith(".xlsx") && !filename.endsWith(".csv")) {
+            throw new IllegalArgumentException(
+                    "Unsupported file type. Please upload a .xlsx or .csv file.");
+        }
     }
 
     public void unsubscribe(String token) {

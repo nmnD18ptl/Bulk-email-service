@@ -13,8 +13,7 @@ COPY mvnw    pom.xml ./
 
 RUN sed -i 's/\r$//' ./mvnw \
  && chmod +x ./mvnw \
- && ./mvnw dependency:resolve -DexcludeScope=test -B --no-transfer-progress \
- && ./mvnw dependency:resolve-plugins -B --no-transfer-progress
+ && ./mvnw dependency:go-offline -B --no-transfer-progress
 
 # Now copy source and build the fat JAR (tests skipped — CI runs them separately).
 COPY src/ src/

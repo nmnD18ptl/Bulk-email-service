@@ -338,7 +338,7 @@ import { Template, SpamAnalysis } from '../../models/models';
                 <div class="form-group" style="margin:0;grid-column:1/-1">
                   <label>Default Subject Line</label>
                   <input class="form-control" [(ngModel)]="editingTemplate!.subject"
-                         placeholder="Your subject line — supports merge tags like {{FirstName}}">
+                         [placeholder]="subjectPlaceholder">
                 </div>
               </div>
 
@@ -568,6 +568,8 @@ export class TemplatesComponent implements OnInit {
     { label: 'Unsubscribe',  tag: '{{UnsubscribeLink}}' },
     { label: 'Year',         tag: '{{CurrentYear}}'   },
   ];
+
+  readonly subjectPlaceholder = 'Your subject line — supports merge tags like {{FirstName}}';
 
   readonly placeholderHtml = `
     <div style="font-family:sans-serif;padding:60px 40px;text-align:center;color:#9CA3AF">

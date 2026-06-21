@@ -27,10 +27,10 @@ public interface ContactRepository extends JpaRepository<Contact, Long> {
     Page<Contact> findByStatus(Contact.ContactStatus status, Pageable pageable);
 
     @Query("SELECT c FROM Contact c WHERE " +
-           "(:search IS NULL OR LOWER(c.email) LIKE LOWER(CONCAT('%', :search, '%')) " +
-           "OR LOWER(c.firstName) LIKE LOWER(CONCAT('%', :search, '%')) " +
-           "OR LOWER(c.lastName) LIKE LOWER(CONCAT('%', :search, '%')) " +
-           "OR LOWER(c.company) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "(:search IS NULL OR LOWER(c.email) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) " +
+           "OR LOWER(c.firstName) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) " +
+           "OR LOWER(c.lastName) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) " +
+           "OR LOWER(c.company) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) " +
            "AND (:status IS NULL OR c.status = :status) " +
            "AND c.organizationId = :orgId")
     Page<Contact> findByOrganizationIdAndSearchAndStatus(

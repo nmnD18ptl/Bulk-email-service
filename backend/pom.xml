@@ -23,7 +23,7 @@
         <poi.version>5.2.5</poi.version>
         <guava.version>33.0.0-jre</guava.version>
         <flyway.version>10.10.0</flyway.version>
-        <testcontainers.version>1.19.3</testcontainers.version>
+
         <micrometer.version>1.12.4</micrometer.version>
         <lombok.version>1.18.36</lombok.version>
     </properties>
@@ -213,13 +213,6 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- redis module is not in Spring Boot BOM — pin to same version as other TC deps -->
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>redis</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

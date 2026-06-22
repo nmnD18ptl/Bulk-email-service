@@ -80,8 +80,12 @@ public class SmtpConfigService {
         }).orElse(false);
     }
 
-    public boolean testConnectionWithParams(String host, int port, String username, String password,
-                                             SmtpConfig.SecurityType securityType) {
+    /**
+     * Returns null on success, or the exception message string on failure.
+     * Callers can surface this to the client for actionable error feedback.
+     */
+    public String testConnectionWithParams(String host, int port, String username, String password,
+                                           SmtpConfig.SecurityType securityType) {
         try {
             JavaMailSenderImpl sender = new JavaMailSenderImpl();
             sender.setHost(host);
@@ -90,10 +94,12 @@ public class SmtpConfigService {
             sender.setPassword(password);
             configureProperties(sender, securityType);
             sender.testConnection();
-            return true;
+            return null;
         } catch (Exception e) {
-            log.error("SMTP connection test failed: {}", e.getMessage());
-            return false;
+            String msg = e.getMessage();
+            if (msg == null) msg = e.getClass().getSimpleName();
+            log.error("SMTP connection test failed for {}:{} — {}", host, port, msg);
+            return msg;
         }
     }
 

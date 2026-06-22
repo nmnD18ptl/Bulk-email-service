@@ -87,13 +87,14 @@ public class SmtpConfigController {
         String password = (String) body.get("password");
         String security = (String) body.getOrDefault("securityType", "TLS");
 
-        boolean success = smtpConfigService.testConnectionWithParams(
+        String error = smtpConfigService.testConnectionWithParams(
             host, port, username, password,
             SmtpConfig.SecurityType.valueOf(security));
 
+        boolean success = (error == null);
         return ResponseEntity.ok(Map.of(
             "success", success,
-            "message", success ? "Connection successful!" : "Connection failed."
+            "message", success ? "Connection successful!" : "Connection failed: " + error
         ));
     }
 

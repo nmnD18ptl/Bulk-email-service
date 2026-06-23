@@ -98,6 +98,28 @@ public class SmtpConfigController {
         ));
     }
 
+    @PostMapping("/ping")
+    @PreAuthorize("hasAnyRole('OWNER','ADMIN')")
+    public ResponseEntity<Map<String, Object>> pingHost(@RequestBody Map<String, Object> body) {
+        String host = (String) body.get("host");
+        int port = Integer.parseInt(body.get("port").toString());
+        long start = System.currentTimeMillis();
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress(host, port), 10000);
+            long ms = System.currentTimeMillis() - start;
+            return ResponseEntity.ok(Map.of(
+                "reachable", true,
+                "message", "TCP connection to " + host + ":" + port + " succeeded in " + ms + "ms"
+            ));
+        } catch (Exception e) {
+            long ms = System.currentTimeMillis() - start;
+            return ResponseEntity.ok(Map.of(
+                "reachable", false,
+                "message", "TCP connection to " + host + ":" + port + " failed after " + ms + "ms: " + e.getMessage()
+            ));
+        }
+    }
+
     private SmtpConfig mapToConfig(Map<String, Object> body, SmtpConfig config) {
         if (body.containsKey("name")) config.setName((String) body.get("name"));
         if (body.containsKey("host")) config.setHost((String) body.get("host"));

@@ -22,6 +22,7 @@ import java.util.UUID;
 public class EmailSenderService {
 
     private final SmtpConfigService smtpConfigService;
+    private final BrevoApiService brevoApiService;
     private final EmailQueueRepository emailQueueRepository;
     private final EmailTrackingRepository emailTrackingRepository;
     private final CampaignRepository campaignRepository;
@@ -60,22 +61,10 @@ public class EmailSenderService {
         }
 
         try {
-            JavaMailSenderImpl mailSender = smtpConfigService.buildMailSender(smtpConfig);
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
             String fromEmail = campaign.getFromEmail() != null ? campaign.getFromEmail() : smtpConfig.getFromEmail();
             String fromName  = campaign.getFromName()  != null ? campaign.getFromName()  : smtpConfig.getFromName();
             String fromDomain = fromEmail != null && fromEmail.contains("@")
                     ? fromEmail.substring(fromEmail.indexOf('@') + 1) : "mail.local";
-
-            helper.setFrom(fromEmail, fromName != null ? fromName : fromEmail);
-            helper.setTo(queueItem.getRecipientEmail());
-            helper.setSubject(queueItem.getPersonalizedSubject());
-
-            if (campaign.getReplyToEmail() != null) {
-                helper.setReplyTo(campaign.getReplyToEmail());
-            }
 
             String html = queueItem.getPersonalizedHtml();
             String text = queueItem.getPersonalizedText();
@@ -88,31 +77,59 @@ public class EmailSenderService {
                 return false;
             }
 
-            if (text != null && !text.isBlank()) {
-                helper.setText(text, html);
-            } else {
-                helper.setText(html, true);
-            }
-
-            // RFC-compliant headers required by Gmail/Yahoo
             String unsubscribeUrl = trackingBaseUrl + "/unsubscribe/" + contact.getUnsubscribeToken()
                     + "?c=" + campaign.getId();
             String replyToEmail = campaign.getReplyToEmail() != null ? campaign.getReplyToEmail() : fromEmail;
-            message.setHeader("List-Unsubscribe",
-                "<mailto:" + replyToEmail + "?subject=unsubscribe>, <" + unsubscribeUrl + ">");
-            message.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
-            message.setHeader("Precedence", "bulk");
-            message.setHeader("Feedback-ID",
-                campaign.getId() + ":" + fromDomain + ":campaign:" + fromDomain);
-            message.setHeader("X-Entity-Ref-ID", UUID.randomUUID().toString());
+            String messageId    = UUID.randomUUID().toString() + "@" + fromDomain;
 
-            String messageId = UUID.randomUUID().toString() + "@" + fromDomain;
-            message.setHeader("Message-ID", "<" + messageId + ">");
+            if (smtpConfigService.isBrevoApi(smtpConfig)) {
+                // ── Brevo HTTP API path (port 443 — never blocked by Railway) ──
+                java.util.Map<String, String> emailHeaders = new java.util.LinkedHashMap<>();
+                emailHeaders.put("List-Unsubscribe",
+                    "<mailto:" + replyToEmail + "?subject=unsubscribe>, <" + unsubscribeUrl + ">");
+                emailHeaders.put("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+                emailHeaders.put("Precedence", "bulk");
+                emailHeaders.put("Feedback-ID",
+                    campaign.getId() + ":" + fromDomain + ":campaign:" + fromDomain);
+                emailHeaders.put("Message-ID", "<" + messageId + ">");
 
-            // Remove JavaMail default X-Mailer header
-            message.removeHeader("X-Mailer");
+                String apiKey = smtpConfigService.getDecryptedApiKey(smtpConfig);
+                String returnedId = brevoApiService.sendEmail(
+                    apiKey, fromEmail, fromName,
+                    queueItem.getRecipientEmail(), queueItem.getRecipientName(),
+                    queueItem.getPersonalizedSubject(), html, text, emailHeaders);
+                if (returnedId != null) messageId = returnedId;
 
-            mailSender.send(message);
+            } else {
+                // ── JavaMail SMTP path ────────────────────────────────────────
+                JavaMailSenderImpl mailSender = smtpConfigService.buildMailSender(smtpConfig);
+                MimeMessage message = mailSender.createMimeMessage();
+                MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+                helper.setFrom(fromEmail, fromName != null ? fromName : fromEmail);
+                helper.setTo(queueItem.getRecipientEmail());
+                helper.setSubject(queueItem.getPersonalizedSubject());
+
+                if (campaign.getReplyToEmail() != null) helper.setReplyTo(campaign.getReplyToEmail());
+
+                if (text != null && !text.isBlank()) {
+                    helper.setText(text, html);
+                } else {
+                    helper.setText(html, true);
+                }
+
+                message.setHeader("List-Unsubscribe",
+                    "<mailto:" + replyToEmail + "?subject=unsubscribe>, <" + unsubscribeUrl + ">");
+                message.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+                message.setHeader("Precedence", "bulk");
+                message.setHeader("Feedback-ID",
+                    campaign.getId() + ":" + fromDomain + ":campaign:" + fromDomain);
+                message.setHeader("X-Entity-Ref-ID", UUID.randomUUID().toString());
+                message.setHeader("Message-ID", "<" + messageId + ">");
+                message.removeHeader("X-Mailer");
+
+                mailSender.send(message);
+            }
 
             queueItem.setStatus(EmailQueue.QueueStatus.SENT);
             queueItem.setSentAt(LocalDateTime.now());

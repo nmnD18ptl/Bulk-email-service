@@ -22,6 +22,15 @@ public class SmtpConfigService {
     private final SmtpConfigRepository smtpConfigRepository;
     private final EncryptionService encryptionService;
     private final SmtpRateLimiterService smtpRateLimiterService;
+    private final BrevoApiService brevoApiService;
+
+    public boolean isBrevoApi(SmtpConfig config) {
+        return SmtpConfig.ProviderType.BREVO == config.getProviderType();
+    }
+
+    public String getDecryptedApiKey(SmtpConfig config) {
+        return encryptionService.decrypt(config.getEncryptedPassword());
+    }
 
     public List<SmtpConfig> findAll() {
         Long orgId = TenantContext.getOrganizationId();
@@ -81,11 +90,15 @@ public class SmtpConfigService {
     }
 
     /**
-     * Returns null on success, or the exception message string on failure.
-     * Callers can surface this to the client for actionable error feedback.
+     * Returns null on success, or the error message string on failure.
+     * When providerType is BREVO, tests the API key via HTTPS instead of SMTP.
      */
     public String testConnectionWithParams(String host, int port, String username, String password,
-                                           SmtpConfig.SecurityType securityType) {
+                                           SmtpConfig.SecurityType securityType,
+                                           SmtpConfig.ProviderType providerType) {
+        if (providerType == SmtpConfig.ProviderType.BREVO) {
+            return brevoApiService.testApiKey(password);
+        }
         try {
             JavaMailSenderImpl sender = new JavaMailSenderImpl();
             sender.setHost(host);
@@ -101,6 +114,11 @@ public class SmtpConfigService {
             log.error("SMTP connection test failed for {}:{} — {}", host, port, msg);
             return msg;
         }
+    }
+
+    public String testConnectionWithParams(String host, int port, String username, String password,
+                                           SmtpConfig.SecurityType securityType) {
+        return testConnectionWithParams(host, port, username, password, securityType, SmtpConfig.ProviderType.CUSTOM);
     }
 
     public JavaMailSenderImpl buildMailSender(SmtpConfig config) {

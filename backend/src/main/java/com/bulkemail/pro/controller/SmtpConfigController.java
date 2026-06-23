@@ -81,15 +81,17 @@ public class SmtpConfigController {
     @PreAuthorize("hasAnyRole('OWNER','ADMIN')")
     public ResponseEntity<Map<String, Object>> testConnectionWithParams(
             @RequestBody Map<String, Object> body) {
-        String host = (String) body.get("host");
-        int port = Integer.parseInt(body.get("port").toString());
+        String host     = (String) body.get("host");
+        int    port     = Integer.parseInt(body.get("port").toString());
         String username = (String) body.get("username");
         String password = (String) body.get("password");
         String security = (String) body.getOrDefault("securityType", "TLS");
+        String provider = (String) body.getOrDefault("providerType", "CUSTOM");
 
         String error = smtpConfigService.testConnectionWithParams(
             host, port, username, password,
-            SmtpConfig.SecurityType.valueOf(security));
+            SmtpConfig.SecurityType.valueOf(security),
+            SmtpConfig.ProviderType.valueOf(provider));
 
         boolean success = (error == null);
         return ResponseEntity.ok(Map.of(

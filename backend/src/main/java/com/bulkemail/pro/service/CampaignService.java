@@ -28,6 +28,7 @@ public class CampaignService {
     private final ContactRepository      contactRepository;
     private final EmailQueueRepository   emailQueueRepository;
     private final SmtpConfigService      smtpConfigService;
+    private final BrevoApiService        brevoApiService;
     private final BatchProcessor         batchProcessor;
     private final EmailSenderService     emailSenderService;
     private final PlanEnforcementService planEnforcementService;
@@ -213,29 +214,35 @@ public class CampaignService {
             : smtpConfigService.getDefault()
                 .orElseThrow(() -> new RuntimeException("No SMTP server configured. Please add an SMTP configuration in Settings first."));
 
-        JavaMailSenderImpl mailSender = smtpConfigService.buildMailSender(smtpConfig);
-        MimeMessage message = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
         String fromEmail = campaign.getFromEmail() != null ? campaign.getFromEmail() : smtpConfig.getFromEmail();
         String fromName  = campaign.getFromName()  != null ? campaign.getFromName()  : smtpConfig.getFromName();
-
-        helper.setFrom(fromEmail, fromName != null ? fromName : fromEmail);
-        helper.setTo(testEmail);
-        helper.setSubject("[TEST] " + campaign.getSubject());
-
+        String subject   = "[TEST] " + campaign.getSubject();
         String html = campaign.getHtmlContent()
             .replace("{{FirstName}}", "Test")
             .replace("{{LastName}}", "User")
             .replace("{{Email}}", testEmail)
             .replace("{{UnsubscribeLink}}", trackingBaseUrl + "/unsubscribe/test-mode");
+        String text = campaign.getTextContent();
 
-        if (campaign.getTextContent() != null && !campaign.getTextContent().isBlank()) {
-            helper.setText(campaign.getTextContent(), html);
+        if (smtpConfigService.isBrevoApi(smtpConfig)) {
+            String apiKey = smtpConfigService.getDecryptedApiKey(smtpConfig);
+            brevoApiService.sendEmail(apiKey, fromEmail, fromName,
+                testEmail, testEmail, subject, html, text, null);
         } else {
-            helper.setText(html, true);
-        }
+            JavaMailSenderImpl mailSender = smtpConfigService.buildMailSender(smtpConfig);
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-        mailSender.send(message);
+            helper.setFrom(fromEmail, fromName != null ? fromName : fromEmail);
+            helper.setTo(testEmail);
+            helper.setSubject(subject);
+
+            if (text != null && !text.isBlank()) {
+                helper.setText(text, html);
+            } else {
+                helper.setText(html, true);
+            }
+            mailSender.send(message);
+        }
     }
 }

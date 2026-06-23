@@ -225,6 +225,7 @@ public class BatchProcessor {
             EmailQueue item = new EmailQueue();
             item.setCampaign(campaign);
             item.setContact(contact);
+            item.setOrganizationId(campaign.getOrganizationId());
             item.setRecipientEmail(contact.getEmail());
             item.setRecipientName(contact.getFullName());
             item.setPersonalizedSubject(subject);

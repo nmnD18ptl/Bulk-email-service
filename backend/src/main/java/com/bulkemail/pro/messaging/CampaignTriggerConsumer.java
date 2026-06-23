@@ -1,6 +1,7 @@
 package com.bulkemail.pro.messaging;
 
 import com.bulkemail.pro.config.RabbitMqConfig;
+import com.bulkemail.pro.security.TenantContext;
 import com.bulkemail.pro.service.BatchProcessor;
 import com.bulkemail.pro.service.DistributedLockService;
 import com.rabbitmq.client.Channel;
@@ -56,16 +57,17 @@ public class CampaignTriggerConsumer {
             return;
         }
 
+        Long orgId = extractOrgId(payload);
         try {
-            log.info("Acquired lock for campaign {} — starting processing", campaignId);
+            if (orgId != null) TenantContext.set(orgId, null, null);
+            log.info("Acquired lock for campaign {} (org={}) — starting processing", campaignId, orgId);
             batchProcessor.processCampaignSync(campaignId);
             channel.basicAck(deliveryTag, false);
         } catch (Exception e) {
             log.error("Campaign {} processing failed: {}", campaignId, e.getMessage(), e);
-            // nack without requeue — let Spring retry interceptor handle retries,
-            // after max-attempts it routes to DLQ
             channel.basicNack(deliveryTag, false, false);
         } finally {
+            TenantContext.clear();
             lockService.release(lockKey, lockValue);
         }
     }
@@ -75,6 +77,15 @@ public class CampaignTriggerConsumer {
         if (raw instanceof Number) return ((Number) raw).longValue();
         if (raw instanceof String) {
             try { return Long.parseLong((String) raw); } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    private Long extractOrgId(Map<String, Object> payload) {
+        Object raw = payload.get("organizationId");
+        if (raw instanceof Number) {
+            long v = ((Number) raw).longValue();
+            return v > 0 ? v : null;
         }
         return null;
     }

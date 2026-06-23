@@ -61,8 +61,10 @@ public class EmailSenderService {
         }
 
         try {
-            String fromEmail = campaign.getFromEmail() != null ? campaign.getFromEmail() : smtpConfig.getFromEmail();
-            String fromName  = campaign.getFromName()  != null ? campaign.getFromName()  : smtpConfig.getFromName();
+            String cf = campaign.getFromEmail();
+            String cn = campaign.getFromName();
+            String fromEmail = (cf != null && !cf.isBlank()) ? cf : smtpConfig.getFromEmail();
+            String fromName  = (cn != null && !cn.isBlank()) ? cn : smtpConfig.getFromName();
             String fromDomain = fromEmail != null && fromEmail.contains("@")
                     ? fromEmail.substring(fromEmail.indexOf('@') + 1) : "mail.local";
 

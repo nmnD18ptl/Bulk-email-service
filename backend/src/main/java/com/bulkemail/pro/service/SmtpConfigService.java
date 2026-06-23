@@ -169,8 +169,9 @@ public class SmtpConfigService {
      * under horizontal scaling (each instance held its own counter).
      */
     public boolean canSendMore(SmtpConfig config) {
-        return smtpRateLimiterService.canSend(
-                config.getId(), config.getDailyLimit(), config.getHourlyLimit());
+        int daily  = config.getDailyLimit()  != null ? config.getDailyLimit()  : Integer.MAX_VALUE;
+        int hourly = config.getHourlyLimit() != null ? config.getHourlyLimit() : Integer.MAX_VALUE;
+        return smtpRateLimiterService.canSend(config.getId(), daily, hourly);
     }
 
     /**

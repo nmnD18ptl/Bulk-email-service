@@ -139,8 +139,8 @@ public class BatchProcessor {
                     waitWhilePaused(campaignId);
 
                     try {
-                        emailSenderService.sendEmail(item);
-                        sentThisRun++;
+                        boolean sent = emailSenderService.sendEmail(item);
+                        if (sent) sentThisRun++;
                     } catch (SmtpDailyLimitException e) {
                         log.warn("SMTP limit reached for campaign {}. Pausing.", campaignId);
                         campaign = campaignRepository.findById(campaignId).orElse(campaign);
@@ -149,6 +149,18 @@ public class BatchProcessor {
                         sendStatusMessage(campaignId,
                                 "Paused — daily limit reached. Remaining emails will resume when limit resets.");
                         return;
+                    } catch (Exception e) {
+                        log.error("Unexpected error sending to {} for campaign {}: {}",
+                                item.getRecipientEmail(), campaignId, e.getMessage(), e);
+                        item.setRetryCount(item.getRetryCount() != null ? item.getRetryCount() + 1 : 1);
+                        item.setLastAttemptAt(LocalDateTime.now());
+                        item.setErrorMessage(e.getClass().getSimpleName() + ": " + e.getMessage());
+                        if (item.getRetryCount() >= (item.getMaxRetries() != null ? item.getMaxRetries() : 3)) {
+                            item.setStatus(EmailQueue.QueueStatus.FAILED);
+                        } else {
+                            item.setStatus(EmailQueue.QueueStatus.PENDING);
+                        }
+                        emailQueueRepository.save(item);
                     }
 
                     processed++;

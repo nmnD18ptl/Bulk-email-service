@@ -78,6 +78,9 @@ public class CampaignService {
 
         planEnforcementService.checkCanSendCampaign(TenantContext.getOrganizationId(), recipients.size());
 
+        // Cancel any stale PENDING items from a previous failed/interrupted send
+        emailQueueRepository.cancelPendingByCampaign(campaignId);
+
         batchProcessor.buildQueue(campaign, recipients);
 
         // Write outbox event in same transaction — relay publishes to RabbitMQ

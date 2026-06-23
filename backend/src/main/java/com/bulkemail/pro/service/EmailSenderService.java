@@ -204,6 +204,7 @@ public class EmailSenderService {
                                 EmailTracking.TrackingEvent event, String url) {
         EmailTracking tracking = new EmailTracking();
         tracking.setTrackingId(queueItem.getTrackingId());
+        tracking.setOrganizationId(campaign.getOrganizationId());
         tracking.setCampaign(campaign);
         tracking.setContact(contact);
         tracking.setEmailQueue(queueItem);

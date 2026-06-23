@@ -51,6 +51,7 @@ public class EmailTracking {
     private boolean firstClick = false;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime eventAt;
 
     public enum TrackingEvent {

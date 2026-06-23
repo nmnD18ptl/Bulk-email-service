@@ -46,6 +46,7 @@ public class User {
     private LocalDateTime lastLoginAt;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp

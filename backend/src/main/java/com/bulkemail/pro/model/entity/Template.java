@@ -42,6 +42,7 @@ public class Template {
     private boolean isActive = true;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp

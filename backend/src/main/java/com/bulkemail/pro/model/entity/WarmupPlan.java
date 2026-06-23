@@ -51,6 +51,7 @@ public class WarmupPlan {
     private Double complaintRateThreshold = 0.1;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp

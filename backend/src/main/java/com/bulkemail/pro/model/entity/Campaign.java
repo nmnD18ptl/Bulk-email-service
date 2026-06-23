@@ -93,6 +93,7 @@ public class Campaign {
     private boolean trackClicks = true;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp

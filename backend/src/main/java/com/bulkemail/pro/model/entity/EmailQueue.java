@@ -64,6 +64,7 @@ public class EmailQueue {
     private LocalDateTime lastAttemptAt;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp

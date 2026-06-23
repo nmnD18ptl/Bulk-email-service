@@ -29,6 +29,7 @@ public class Tag {
     private String description;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @ManyToMany(mappedBy = "tags", fetch = FetchType.LAZY)

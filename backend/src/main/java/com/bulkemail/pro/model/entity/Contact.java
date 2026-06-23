@@ -64,6 +64,7 @@ public class Contact {
     private LocalDateTime gdprConsentDate;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp

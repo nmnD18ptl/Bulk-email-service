@@ -62,6 +62,7 @@ public class SmtpConfig {
     private boolean connectionTested = false;
 
     @CreationTimestamp
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
